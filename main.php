@@ -6,6 +6,13 @@ class ConsoleApplication
     // main instance method , an entry-point for the application
     public function main()
     {
+        // call the readInput method
+        $this->readInput();
+    }
+
+    // method to read user input
+    public function readInput()
+    {
         // ask for user input
         echo "Enter something: ";
         // read the input
