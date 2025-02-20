@@ -7,11 +7,11 @@
         {
             "externalConsole": true,
             "xdebugSettings": {},
-            "name": "Launch ConsoleApplication main script",
+            "name": "Launch app main script",
             "type": "php",
             "request": "launch",
-            "program": "${workspaceFolder}/main.php",
-            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/orm-redbean/todo-ui.php",
+            "cwd": "${workspaceFolder}/orm-redbean",
             "port": 9003,
             "runtimeArgs": [
                 //"-dxdebug.start_with_request=yes"
