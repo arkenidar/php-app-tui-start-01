@@ -50,10 +50,10 @@ while (true) {
                 // Parse HTTP request
                 list($method, $uri, $headers, $body) = parseHttpRequest($request);
                 $queryString = parse_url($uri, PHP_URL_QUERY);
-                if (is_string($queryString))
-                    parse_str($queryString, $getParams); // Parse GET params
-                else
-                    $getParams = [];
+                if ($queryString === null) {
+                    $queryString = '';
+                }
+                parse_str($queryString, $getParams); // Parse GET params
                 $postBody = parseBody($headers, $body); // Parse JSON/Form body
 
                 // Resolve file path
@@ -89,6 +89,9 @@ while (true) {
         echo "Fiber Error: " . $e->getMessage() . "\n";
     }
 }
+
+// Close server when script ends
+fclose($server);
 
 /**
  * Parse an HTTP request into method, URI, headers, and body.
@@ -143,10 +146,30 @@ function parseBody($headers, $body)
  */
 function respondStatic($conn, $path)
 {
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mimeType = finfo_file($finfo, $path);
-    finfo_close($finfo);
+    // Check if the Fileinfo extension is available
+    if (function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $path);
+        finfo_close($finfo);
+    } else {
+        // Fallback to predefined MIME types
+        $mimeTypes = [
+            'html' => 'text/html',
+            'css'  => 'text/css',
+            'js'   => 'application/javascript',
+            'png'  => 'image/png',
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'gif'  => 'image/gif',
+            'svg'  => 'image/svg+xml',
+            'json' => 'application/json'
+        ];
 
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $mimeType = $mimeTypes[$ext] ?? 'application/octet-stream';
+    }
+
+    // Send HTTP headers
     fwrite($conn, "HTTP/1.1 200 OK\r\nContent-Type: $mimeType\r\n\r\n");
 
     // Open the file and send its content
@@ -162,6 +185,7 @@ function respondStatic($conn, $path)
         respond500($conn, "Failed to open file: $path");
     }
 
+    // Close the connection
     fclose($conn);
 }
 
