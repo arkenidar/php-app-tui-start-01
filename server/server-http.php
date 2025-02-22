@@ -162,11 +162,8 @@ function respondStatic($conn, $path)
  */
 function respondDynamic($conn, $path, $method, $getParams, $postBody, $headers)
 {
-    $_SERVER['REQUEST_METHOD'] = $method;
     $_GET = $getParams;
-    $_POST = is_array($postBody) ? $postBody : [];
-    $_REQUEST = array_merge($_GET, $_POST);
-    $_SERVER['HTTP_HEADERS'] = $headers;
+    $_POST = $postBody;
 
     ob_start();
     require $path;
