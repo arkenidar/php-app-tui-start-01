@@ -13,12 +13,13 @@
             "program": "${workspaceFolder}/server/server-http.php",
             "cwd": "${workspaceFolder}/server",
             "runtimeArgs": [
-                //"-dxdebug.start_with_request=yes"
+                "-dxdebug.start_with_request=yes"
             ],
             "env": {
                 "XDEBUG_MODE": "debug,develop",
                 "XDEBUG_CONFIG": "client_port=9003"
-            }
+            },
+            "port": 9003
         },
         {
             "externalConsole": true,
