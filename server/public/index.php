@@ -1,15 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>home page</title>
 </head>
+
 <body>
     <h1>Home page</h1>
     <p>Welcome to the home page</p>
     <hr>
-    <a href="/tests/headers/">/tests/headers/</a>
+    <ul>
+        <li><a href="/tests/headers/">/tests/headers/</a></li>
+        <li><a href="/tests/session/counter.php">/tests/session/counter.php</a></li>
+        <li><a href="/?name=Zeus">set a name GET param : $_GET['name']</a></li>
+    </ul>
     <hr>
     <p>shared variables</p>
     <form action="" method="post">
@@ -44,4 +50,5 @@
     <img src="media/images/doggie.webp" alt="doggie">
 
 </body>
+
 </html>
