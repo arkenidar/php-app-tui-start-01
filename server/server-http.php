@@ -1,149 +1,198 @@
 <?php
 
-// Create a TCP socket for HTTP server
-$serverSocket = stream_socket_server("tcp://0.0.0.0:8080", $errno, $errstr);
-if (!$serverSocket) {
-    die("Failed to create socket: $errstr ($errno)\n");
+// Configuration
+$host = '127.0.0.1';
+$port = 8000;
+$documentRoot = __DIR__ . DIRECTORY_SEPARATOR . 'public';
+
+// Ensure document root exists
+if (!is_dir($documentRoot)) {
+    mkdir($documentRoot, 0755, true);
 }
 
-// Set the server socket to non-blocking mode
-stream_set_blocking($serverSocket, false);
+$server = stream_socket_server("tcp://$host:$port", $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN);
 
-echo "HTTP Server listening on 0.0.0.0:8080...\n";
+if (!$server) {
+    die("Error: $errstr ($errno)\n");
+}
 
-$clients = [];
-$fibers = [];
-$clientFibers = [];
+// Set server socket to non-blocking mode
+stream_set_blocking($server, false);
 
-// Function to parse HTTP requests
-function parseHttpRequest($rawRequest) {
-    $lines = explode("\r\n", $rawRequest);
-    $requestLine = array_shift($lines);
-    $parts = explode(' ', $requestLine);
+echo "PHP Fiber Web Server running at http://$host:$port\n";
 
-    if (count($parts) < 2) {
-        return null; // Invalid request
+// Infinite loop for accepting multiple connections
+while (true) {
+    $conn = @stream_socket_accept($server, 0); // Non-blocking accept
+
+    if ($conn === false) {
+        usleep(10000); // Sleep for 10ms to prevent CPU overuse
+        continue;
     }
 
-    $method = $parts[0];
-    $path = $parts[1];
+    // Handle connection in a Fiber
+    try {
+        $fiber = new Fiber(function ($conn) use ($documentRoot) {
+            try {
+                stream_set_timeout($conn, 2); // Prevent long hangs
+                $request = stream_get_contents($conn, 4096); // Increased buffer for larger requests
 
+                if (!$request) {
+                    fclose($conn);
+                    return;
+                }
+
+                // Parse HTTP request
+                [$method, $uri, $headers, $body] = parseHttpRequest($request);
+                parse_str(parse_url($uri, PHP_URL_QUERY), $getParams); // Parse GET params
+                $postBody = parseBody($headers, $body); // Parse JSON/Form body
+
+                // Resolve file path
+                $safeUri = str_replace(['../', '..\\'], '', parse_url($uri, PHP_URL_PATH));
+                $path = realpath($documentRoot . DIRECTORY_SEPARATOR . ltrim($safeUri, '/\\'));
+
+                // Ensure path is inside document root
+                if (!$path || strpos($path, realpath($documentRoot)) !== 0) {
+                    respond404($conn);
+                    return;
+                }
+
+                if (is_dir($path)) {
+                    $path .= DIRECTORY_SEPARATOR . 'index.php';
+                }
+
+                if (file_exists($path)) {
+                    if (pathinfo($path, PATHINFO_EXTENSION) === 'php') {
+                        respondDynamic($conn, $path, $method, $getParams, $postBody, $headers);
+                    } else {
+                        respondStatic($conn, $path);
+                    }
+                } else {
+                    respond404($conn);
+                }
+            } catch (Throwable $e) {
+                respond500($conn, $e->getMessage());
+            }
+        });
+
+        $fiber->start($conn);
+    } catch (Throwable $e) {
+        echo "Fiber Error: " . $e->getMessage() . "\n";
+    }
+}
+
+// Close server when script ends
+fclose($server);
+
+/**
+ * Parse an HTTP request into method, URI, headers, and body.
+ */
+function parseHttpRequest($request)
+{
+    $lines = explode("\r\n", $request);
+    $firstLine = explode(' ', array_shift($lines));
+
+    $method = $firstLine[0] ?? 'GET';
+    $uri = $firstLine[1] ?? '/';
     $headers = [];
     $body = '';
-    $isBody = false;
 
+    $isBody = false;
     foreach ($lines as $line) {
         if ($line === '') {
             $isBody = true;
             continue;
         }
-
         if ($isBody) {
             $body .= $line;
         } else {
             [$key, $value] = explode(': ', $line, 2) + [null, null];
             if ($key && $value) {
-                $headers[$key] = $value;
+                $headers[$key] = trim($value);
             }
         }
     }
 
-    return compact('method', 'path', 'headers', 'body');
+    return [$method, $uri, $headers, $body];
 }
 
-// Function to generate an HTTP response
-function buildHttpResponse($statusCode, $body, $contentType = "text/html") {
-    $statusMessages = [
-        200 => "OK",
-        400 => "Bad Request",
-        404 => "Not Found",
-        500 => "Internal Server Error"
+/**
+ * Parse request body based on headers.
+ */
+function parseBody($headers, $body)
+{
+    if (isset($headers['Content-Type'])) {
+        if (stripos($headers['Content-Type'], 'application/json') !== false) {
+            return json_decode($body, true);
+        } elseif (stripos($headers['Content-Type'], 'application/x-www-form-urlencoded') !== false) {
+            parse_str($body, $parsedBody);
+            return $parsedBody;
+        }
+    }
+    return $body;
+}
+
+/**
+ * Serve static files efficiently.
+ */
+function respondStatic($conn, $path)
+{
+    $mimeTypes = [
+        'html' => 'text/html',
+        'css'  => 'text/css',
+        'js'   => 'application/javascript',
+        'png'  => 'image/png',
+        'jpg'  => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'gif'  => 'image/gif',
+        'svg'  => 'image/svg+xml',
+        'json' => 'application/json'
     ];
 
-    $statusMessage = $statusMessages[$statusCode] ?? "Unknown";
-    return "HTTP/1.1 $statusCode $statusMessage\r\n"
-        . "Content-Type: $contentType\r\n"
-        . "Content-Length: " . strlen($body) . "\r\n"
-        . "Connection: close\r\n\r\n"
-        . $body;
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    $mimeType = $mimeTypes[$ext] ?? 'application/octet-stream';
+
+    fwrite($conn, "HTTP/1.1 200 OK\r\nContent-Type: $mimeType\r\n\r\n");
+    readfile($path);
+    fclose($conn);
 }
 
-// Simple event loop
-while (true) {
-    // Use stream_select() to wait for activity on sockets
-    $readSockets = $clients;
-    $readSockets[] = $serverSocket; // Include server socket
-    $writeSockets = null;
-    $exceptSockets = null;
+/**
+ * Serve dynamic PHP scripts with request data.
+ */
+function respondDynamic($conn, $path, $method, $getParams, $postBody, $headers)
+{
+    $_SERVER['REQUEST_METHOD'] = $method;
+    $_GET = $getParams;
+    $_POST = is_array($postBody) ? $postBody : [];
+    $_REQUEST = array_merge($_GET, $_POST);
+    $_SERVER['HTTP_HEADERS'] = $headers;
 
-    if (stream_select($readSockets, $writeSockets, $exceptSockets, 0, 1000) > 0) {
-        // Accept new client connections
-        if (in_array($serverSocket, $readSockets)) {
-            $clientSocket = @stream_socket_accept($serverSocket, 0);
-            if ($clientSocket) {
-                echo "New client connected.\n";
-                stream_set_blocking($clientSocket, false);
-                $clients[] = $clientSocket;
+    ob_start();
+    require $path;
+    $content = ob_get_clean();
 
-                // Create a new Fiber for each client
-                $fiber = new Fiber(function ($socket) {
-                    while (true) {
-                        // Read data from the client
-                        $data = Fiber::suspend();
-                        if ($data === false || trim($data) === '') {
-                            echo "Client disconnected.\n";
-                            break;
-                        }
+    fwrite($conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n");
+    fwrite($conn, $content);
+    fclose($conn);
+}
 
-                        // Parse HTTP request
-                        $request = parseHttpRequest($data);
-                        if (!$request) {
-                            $response = buildHttpResponse(400, "Bad Request");
-                        } else {
-                            // Handle simple routing
-                            if ($request['path'] === "/") {
-                                $response = buildHttpResponse(200, "<h1>Welcome to My PHP HTTP Server</h1>");
-                            } elseif ($request['path'] === "/json") {
-                                $response = buildHttpResponse(200, json_encode(["message" => "Hello, world!"]), "application/json");
-                            } else {
-                                $response = buildHttpResponse(404, "<h1>404 Not Found</h1>");
-                            }
-                        }
+/**
+ * Serve 404 response.
+ */
+function respond404($conn)
+{
+    $content = "<h1>404 Not Found</h1>";
+    fwrite($conn, "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n$content");
+    fclose($conn);
+}
 
-                        // Send HTTP response
-                        fwrite($socket, $response);
-                    }
-
-                    // Close the client socket
-                    fclose($socket);
-                });
-
-                // Correctly pass the socket when starting the Fiber
-                $fiber->start($clientSocket);
-                $fibers[] = $fiber;
-                $clientFibers[(int) $clientSocket] = $fiber;
-            }
-        }
-
-        // Handle client I/O
-        foreach ($clients as $key => $clientSocket) {
-            if (in_array($clientSocket, $readSockets)) {
-                $data = fread($clientSocket, 4096);
-                if ($data !== false && $data !== '') {
-                    // Resume the corresponding Fiber with the received data
-                    if (isset($clientFibers[(int) $clientSocket])) {
-                        $clientFibers[(int) $clientSocket]->resume($data);
-                    }
-                } else {
-                    // Cleanup if client disconnected
-                    fclose($clientSocket);
-                    unset($clients[$key]);
-                    unset($clientFibers[(int) $clientSocket]);
-                }
-            }
-        }
-    }
-
-    // Sleep to avoid busy-waiting
-    usleep(1000);
+/**
+ * Serve 500 response.
+ */
+function respond500($conn, $errorMessage)
+{
+    $content = "<h1>500 Internal Server Error</h1><p>$errorMessage</p>";
+    fwrite($conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n$content");
+    fclose($conn);
 }

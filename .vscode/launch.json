@@ -7,6 +7,23 @@
         {
             "externalConsole": true,
             "xdebugSettings": {},
+            "name": "Launch server",
+            "type": "php",
+            "request": "launch",
+            "program": "${workspaceFolder}/server/server-http.php",
+            "cwd": "${workspaceFolder}/server",
+            "port": 9003,
+            "runtimeArgs": [
+                //"-dxdebug.start_with_request=yes"
+            ],
+            "env": {
+                "XDEBUG_MODE": "debug,develop",
+                "XDEBUG_CONFIG": "client_port=${port}"
+            }
+        },
+        {
+            "externalConsole": true,
+            "xdebugSettings": {},
             "name": "Launch app main script",
             "type": "php",
             "request": "launch",
