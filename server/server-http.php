@@ -137,23 +137,25 @@ function parseBody($headers, $body)
  */
 function respondStatic($conn, $path)
 {
-    $mimeTypes = [
-        'html' => 'text/html',
-        'css'  => 'text/css',
-        'js'   => 'application/javascript',
-        'png'  => 'image/png',
-        'jpg'  => 'image/jpeg',
-        'jpeg' => 'image/jpeg',
-        'gif'  => 'image/gif',
-        'svg'  => 'image/svg+xml',
-        'json' => 'application/json'
-    ];
-
-    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-    $mimeType = $mimeTypes[$ext] ?? 'application/octet-stream';
+    $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $path);
+    finfo_close($finfo);
 
     fwrite($conn, "HTTP/1.1 200 OK\r\nContent-Type: $mimeType\r\n\r\n");
-    readfile($path);
+
+    // Open the file and send its content
+    $file = fopen($path, 'rb');
+    if ($file) {
+        while (! feof($file)) {
+            $buffer = fread($file, 8192);
+            fwrite($conn, $buffer);
+        }
+        fclose($file);
+    } else {
+        // If the file cannot be opened, send a 500 response
+        respond500($conn, "Failed to open file: $path");
+    }
+
     fclose($conn);
 }
 
