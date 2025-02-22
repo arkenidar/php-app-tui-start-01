@@ -90,9 +90,6 @@ while (true) {
     }
 }
 
-// Close server when script ends
-fclose($server);
-
 /**
  * Parse an HTTP request into method, URI, headers, and body.
  */
