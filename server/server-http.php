@@ -1,10 +1,10 @@
 <?php
 /**
- * PHP Fiber-based Web Server with Cookie and Session Support
+ * PHP Fiber-based Web Server with Cookie and In-Memory Session Support
  *
  * This script implements a lightweight web server using PHP Fibers for concurrency.
- * It now includes basic support for cookies and sessions. Sessions are managed using
- * a simple file-based approach, where session data is stored in the "sessions" directory.
+ * It now includes basic support for cookies and sessions using a shared variable
+ * to store session data in memory.
  *
  * Usage:
  *   php server.php
@@ -116,14 +116,15 @@ class WebServer {
     protected array $sharedVariables = [
         "counter"   => 1,
         "container" => [],
+        // Initialize a shared variable for sessions.
+        "sessions"  => []
     ];
 
     // Cookie support: store outgoing cookies.
     protected array $responseCookies = [];
     
-    // Session support: session ID and session storage path.
+    // Store the current session ID.
     protected string $sessionId;
-    protected string $sessionSavePath;
 
     /**
      * Constructor to initialize server settings.
@@ -136,7 +137,6 @@ class WebServer {
         $this->host = $host;
         $this->port = $port;
         $this->documentRoot = $documentRoot;
-        $this->sessionSavePath = __DIR__ . DIRECTORY_SEPARATOR . 'sessions';
     }
 
     /**
@@ -179,38 +179,30 @@ class WebServer {
     }
 
     /**
-     * Start a session by checking for a session cookie, loading session data,
-     * or creating a new session if none exists.
+     * Start a session by checking for a session cookie and loading session data
+     * from a shared variable. If no session exists, a new session is created.
      */
     protected function startSession(): void {
-        if (!is_dir($this->sessionSavePath)) {
-            mkdir($this->sessionSavePath, 0755, true);
-        }
-        if (isset($_COOKIE['PHPSESSID']) && !empty($_COOKIE['PHPSESSID'])) {
+        // Use in-memory shared variable for sessions.
+        if (isset($_COOKIE['PHPSESSID']) && !empty($_COOKIE['PHPSESSID'])
+            && isset($this->sharedVariables['sessions'][$_COOKIE['PHPSESSID']])) {
             $this->sessionId = $_COOKIE['PHPSESSID'];
+            $_SESSION = $this->sharedVariables['sessions'][$this->sessionId];
         } else {
             $this->sessionId = bin2hex(random_bytes(16));
-            // Set the session cookie for the new session.
             $this->setCookie('PHPSESSID', $this->sessionId);
-        }
-        $sessionFile = $this->sessionSavePath . DIRECTORY_SEPARATOR . "sess_$this->sessionId";
-        if (file_exists($sessionFile)) {
-            $data = file_get_contents($sessionFile);
-            $_SESSION = unserialize($data);
-            if ($_SESSION === false) {
-                $_SESSION = [];
-            }
-        } else {
             $_SESSION = [];
+            $this->sharedVariables['sessions'][$this->sessionId] = $_SESSION;
         }
     }
 
     /**
-     * Save the session data to a file.
+     * Save the session data back to the shared variable.
      */
     protected function endSession(): void {
-        $sessionFile = $this->sessionSavePath . DIRECTORY_SEPARATOR . "sess_$this->sessionId";
-        file_put_contents($sessionFile, serialize($_SESSION));
+        if (isset($this->sessionId)) {
+            $this->sharedVariables['sessions'][$this->sessionId] = $_SESSION;
+        }
     }
 
     /**
@@ -381,7 +373,7 @@ class WebServer {
         $_POST = $postBody;
         // $_COOKIE is already set in handleConnection()
 
-        // Start session management.
+        // Start session management using the shared sessions variable.
         $this->startSession();
 
         // Expose shared variables to dynamic scripts.
@@ -403,7 +395,7 @@ class WebServer {
         require $path;
         $content = ob_get_clean();
 
-        // Save session data.
+        // Save session data back to the shared variable.
         $this->endSession();
 
         // Build HTTP response headers.
