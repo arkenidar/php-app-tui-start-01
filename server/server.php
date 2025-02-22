@@ -41,6 +41,7 @@ while (true) {
                             break;
                         }
 
+                        $data = strval($data);
                         echo "Received: $data\n";
 
                         // Send a response back to the client
