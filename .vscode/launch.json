@@ -6,7 +6,6 @@
     "configurations": [
         {
             "externalConsole": true,
-            "xdebugSettings": {},
             "name": "Launch server",
             "type": "php",
             "request": "launch",
@@ -23,7 +22,6 @@
         },
         {
             "externalConsole": true,
-            "xdebugSettings": {},
             "name": "Launch app main script",
             "type": "php",
             "request": "launch",
