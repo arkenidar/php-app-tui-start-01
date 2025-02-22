@@ -9,6 +9,8 @@
     <h1>Home page</h1>
     <p>Welcome to the home page</p>
     <hr>
+    <a href="/tests/headers/">/tests/headers/</a>
+    <hr>
     <p>shared variables</p>
     <form action="" method="post">
         <input type="text" name="item">
