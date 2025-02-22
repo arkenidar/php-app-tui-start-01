@@ -48,8 +48,12 @@ while (true) {
                 }
 
                 // Parse HTTP request
-                [$method, $uri, $headers, $body] = parseHttpRequest($request);
-                parse_str(parse_url($uri, PHP_URL_QUERY), $getParams); // Parse GET params
+                list($method, $uri, $headers, $body) = parseHttpRequest($request);
+                $queryString = parse_url($uri, PHP_URL_QUERY);
+                if (is_string($queryString))
+                    parse_str($queryString, $getParams); // Parse GET params
+                else
+                    $getParams = [];
                 $postBody = parseBody($headers, $body); // Parse JSON/Form body
 
                 // Resolve file path
