@@ -134,11 +134,12 @@ class WebServer {
             $postBody = $request->getParsedBody();
 
             // Sanitize the URI to prevent directory traversal.
-            $safeUri = str_replace(['../', '..\\'], '', parse_url($request->uri, PHP_URL_PATH));
-            $path = realpath($this->documentRoot . DIRECTORY_SEPARATOR . ltrim($safeUri, '/\\'));
+            $safeUri = parse_url($request->uri, PHP_URL_PATH);
+            $assembledPath = $this->documentRoot . str_replace("/", DIRECTORY_SEPARATOR, $safeUri);
+            $path = realpath($assembledPath);
 
             // Ensure the resolved path is within the document root.
-            if (!$path || strpos($path, realpath($this->documentRoot)) !== 0) {
+            if ($path === false || strpos($path, realpath($this->documentRoot)) !== 0) {
                 $this->respond404($conn);
                 return;
             }
@@ -222,15 +223,23 @@ class WebServer {
         $_POST = $postBody;
 
         // Optionally, expose shared variables to dynamic scripts.
-        $shared_variables = $this->sharedVariables;
+        $shared_variables = &$this->sharedVariables;
         // You might later update $this->sharedVariables if dynamic scripts modify it.
+
+        $additionalResponseHeaders = ["Content-Type" => "text/html", "Connection" => "close"];
+        $responseCode = 200;
 
         ob_start();
         require $path;
         $content = ob_get_clean();
 
-        $responseHeaders = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n";
-        fwrite($conn, $responseHeaders . $content);
+        // Send the response.
+        // reason phrase is optional, so we can use OK as default
+        $responseHeaders = "HTTP/1.1 $responseCode OK\r\n";
+        foreach ($additionalResponseHeaders as $key => $value) {
+            $responseHeaders .= "$key: $value\r\n";
+        }
+        fwrite($conn, $responseHeaders . "\r\n" . $content);
         fclose($conn);
     }
 
