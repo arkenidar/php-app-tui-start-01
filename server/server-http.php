@@ -1,4 +1,16 @@
 <?php
+/**
+ * PHP Fiber-based Web Server
+ *
+ * This script implements a lightweight web server using PHP Fibers for concurrency.
+ * It handles both static file requests and dynamic PHP scripts. Error handling,
+ * basic routing, and security measures such as directory traversal prevention are included.
+ *
+ * Usage:
+ *   php server.php
+ *
+ * @package PHPFiberWebServer
+ */
 
 /**
  * Class representing an HTTP request.
@@ -9,19 +21,26 @@ class HttpRequest {
     public array $headers = [];
     public string $body;
 
+    /**
+     * Construct an HttpRequest by parsing a raw HTTP request string.
+     *
+     * @param string $rawRequest The raw HTTP request.
+     */
     public function __construct(string $rawRequest) {
         // Split the raw request into header and body parts.
         $parts = explode("\r\n\r\n", $rawRequest, 2);
         $headerPart = $parts[0];
         $this->body = $parts[1] ?? '';
 
-        // Split header part into lines.
+        // Split header part into individual lines.
         $lines = explode("\r\n", $headerPart);
         $firstLine = array_shift($lines);
+        // Parse the request line (e.g., "GET /path HTTP/1.1").
         $requestLine = explode(' ', $firstLine);
         $this->method = $requestLine[0] ?? 'GET';
         $this->uri    = $requestLine[1] ?? '/';
 
+        // Process remaining header lines.
         foreach ($lines as $line) {
             if (strpos($line, ': ') !== false) {
                 list($key, $value) = explode(': ', $line, 2);
@@ -31,7 +50,9 @@ class HttpRequest {
     }
 
     /**
-     * Return parsed GET parameters from the URI.
+     * Parse and return GET parameters from the URI.
+     *
+     * @return array Associative array of GET parameters.
      */
     public function getQueryParams(): array {
         $queryString = parse_url($this->uri, PHP_URL_QUERY) ?? '';
@@ -42,6 +63,9 @@ class HttpRequest {
 
     /**
      * Parse the request body based on the Content-Type header.
+     *
+     * @return mixed Returns an associative array for JSON or URL-encoded data,
+     *               or the raw body string if no parsing is applicable.
      */
     public function getParsedBody() {
         if (isset($this->headers['Content-Type'])) {
@@ -70,6 +94,13 @@ class WebServer {
         "container" => [],
     ];
 
+    /**
+     * Constructor to initialize server settings.
+     *
+     * @param string $host         Host address to bind the server.
+     * @param int    $port         Port number to listen on.
+     * @param string $documentRoot Path to the document root directory.
+     */
     public function __construct(string $host, int $port, string $documentRoot) {
         $this->host = $host;
         $this->port = $port;
@@ -77,14 +108,16 @@ class WebServer {
     }
 
     /**
-     * Run the web server.
+     * Run the web server: create a socket, listen for connections,
+     * and handle each connection using Fibers for concurrency.
      */
     public function run(): void {
-        // Ensure document root exists.
+        // Ensure the document root directory exists.
         if (!is_dir($this->documentRoot)) {
             mkdir($this->documentRoot, 0755, true);
         }
 
+        // Create a non-blocking server socket.
         $this->serverSocket = stream_socket_server(
             "tcp://{$this->host}:{$this->port}",
             $errno,
@@ -98,11 +131,11 @@ class WebServer {
 
         echo "PHP Fiber Web Server running at http://{$this->host}:{$this->port}\n";
 
-        // Main loop: accept connections and handle them in a Fiber.
+        // Main loop: continuously accept and process connections.
         while (true) {
             $conn = @stream_socket_accept($this->serverSocket, 0);
             if ($conn === false) {
-                usleep(10000); // Sleep 10ms to avoid CPU overuse.
+                usleep(10000); // Sleep for 10ms to reduce CPU usage.
                 continue;
             }
 
@@ -118,7 +151,9 @@ class WebServer {
     }
 
     /**
-     * Handle an individual connection.
+     * Handle an individual client connection.
+     *
+     * @param resource $conn The client connection resource.
      */
     protected function handleConnection($conn): void {
         stream_set_timeout($conn, 2);
@@ -144,12 +179,12 @@ class WebServer {
                 return;
             }
 
-            // If a directory is requested, look for an index.php file.
+            // If a directory is requested, append index.php.
             if (is_dir($path)) {
                 $path .= DIRECTORY_SEPARATOR . 'index.php';
             }
 
-            // Route the request: dynamic PHP script or static file.
+            // Route the request: if file exists, serve dynamic or static content.
             if (file_exists($path)) {
                 if (pathinfo($path, PATHINFO_EXTENSION) === 'php') {
                     $this->respondDynamic($conn, $path, $request->method, $getParams, $postBody, $request->headers);
@@ -165,7 +200,10 @@ class WebServer {
     }
 
     /**
-     * Send a static file as a response.
+     * Serve a static file.
+     *
+     * @param resource $conn The client connection resource.
+     * @param string   $path The full path to the static file.
      */
     protected function respondStatic($conn, string $path): void {
         // Determine MIME type using Fileinfo if available.
@@ -174,6 +212,7 @@ class WebServer {
             $mimeType = finfo_file($finfo, $path);
             finfo_close($finfo);
         } else {
+            // Fallback MIME types.
             $mimeTypes = [
                 'html' => 'text/html',
                 'css'  => 'text/css',
@@ -189,9 +228,11 @@ class WebServer {
             $mimeType = $mimeTypes[$ext] ?? 'application/octet-stream';
         }
 
+        // Build and send HTTP headers.
         $headers = "HTTP/1.1 200 OK\r\nContent-Type: $mimeType\r\nConnection: close\r\n\r\n";
         fwrite($conn, $headers);
 
+        // Stream the file content.
         $file = fopen($path, 'rb');
         if ($file) {
             while (!feof($file)) {
@@ -209,6 +250,13 @@ class WebServer {
 
     /**
      * Execute a PHP script dynamically and send its output.
+     *
+     * @param resource $conn      The client connection resource.
+     * @param string   $path      Path to the PHP script.
+     * @param string   $method    HTTP request method.
+     * @param array    $getParams GET parameters.
+     * @param mixed    $postBody  Parsed POST body.
+     * @param array    $headers   Request headers.
      */
     protected function respondDynamic(
         $conn,
@@ -222,29 +270,41 @@ class WebServer {
         $_GET = $getParams;
         $_POST = $postBody;
 
-        // Optionally, expose shared variables to dynamic scripts.
+        // Expose shared variables to dynamic scripts if needed.
         $shared_variables = &$this->sharedVariables;
-        // You might later update $this->sharedVariables if dynamic scripts modify it.
 
-        $additionalResponseHeaders = ["Content-Type" => "text/html", "Connection" => "close"];
+        // Default additional headers for dynamic responses.
+        $additionalResponseHeaders = [
+            "Content-Type" => "text/html",
+            "Connection"   => "close"
+        ];
+
+        // Example: Uncomment the following lines to perform an HTTP redirection.
+        // $responseCode = 303;
+        // $additionalResponseHeaders["Location"] = "/";
+
+        // By default, we use HTTP 200 OK.
         $responseCode = 200;
 
+        // Capture the output of the dynamic PHP script.
         ob_start();
         require $path;
         $content = ob_get_clean();
 
-        // Send the response.
-        // reason phrase is optional, so we can use OK as default
+        // Build HTTP response headers.
         $responseHeaders = "HTTP/1.1 $responseCode OK\r\n";
         foreach ($additionalResponseHeaders as $key => $value) {
             $responseHeaders .= "$key: $value\r\n";
         }
+        // Send headers and content.
         fwrite($conn, $responseHeaders . "\r\n" . $content);
         fclose($conn);
     }
 
     /**
      * Send a 404 Not Found response.
+     *
+     * @param resource $conn The client connection resource.
      */
     protected function respond404($conn): void {
         $content = "<h1>404 Not Found</h1>";
@@ -255,6 +315,9 @@ class WebServer {
 
     /**
      * Send a 500 Internal Server Error response.
+     *
+     * @param resource $conn         The client connection resource.
+     * @param string   $errorMessage Error message to display.
      */
     protected function respond500($conn, string $errorMessage): void {
         $content = "<h1>500 Internal Server Error</h1><p>$errorMessage</p>";
@@ -264,11 +327,17 @@ class WebServer {
     }
 }
 
-// Configuration values.
-$host = '127.0.0.1';
-$port = 8000;
-$documentRoot = __DIR__ . DIRECTORY_SEPARATOR . 'public';
+// -----------------
+// Server Execution
+// -----------------
+
+// Configuration settings.
+$host = '127.0.0.1';  // Server host.
+$port = 8000;         // Server port.
+$documentRoot = __DIR__ . DIRECTORY_SEPARATOR . 'public';  // Document root directory.
 
 // Create and run the web server.
 $server = new WebServer($host, $port, $documentRoot);
 $server->run();
+
+// End of server-http.php
