@@ -1,13 +1,12 @@
 <?php
 /**
- * PHP Fiber-based Web Server
+ * PHP Fiber-based Web Server with Cookie Support
  *
  * This script implements a lightweight web server using PHP Fibers for concurrency.
- * It handles both static file requests and dynamic PHP scripts. Error handling,
- * basic routing, and security measures such as directory traversal prevention are included.
+ * It now includes basic support for parsing incoming cookies and setting outgoing cookies.
  *
  * Usage:
- *   php server.php
+ *   php server-http.php
  *
  * @package PHPFiberWebServer
  */
@@ -79,6 +78,30 @@ class HttpRequest {
         }
         return $this->body;
     }
+
+    /**
+     * Parse and return cookies from the Cookie header.
+     *
+     * @return array Associative array of cookies.
+     */
+    public function getCookies(): array {
+        $cookies = [];
+        if (isset($this->headers['Cookie'])) {
+            $cookieHeader = $this->headers['Cookie'];
+            $cookiePairs = explode(';', $cookieHeader);
+            foreach ($cookiePairs as $cookie) {
+                $cookie = trim($cookie);
+                if (!$cookie) {
+                    continue;
+                }
+                $parts = explode('=', $cookie, 2);
+                if (count($parts) === 2) {
+                    $cookies[trim($parts[0])] = trim($parts[1]);
+                }
+            }
+        }
+        return $cookies;
+    }
 }
 
 /**
@@ -94,6 +117,9 @@ class WebServer {
         "container" => [],
     ];
 
+    // New property to hold outgoing cookies.
+    protected array $responseCookies = [];
+
     /**
      * Constructor to initialize server settings.
      *
@@ -105,6 +131,45 @@ class WebServer {
         $this->host = $host;
         $this->port = $port;
         $this->documentRoot = $documentRoot;
+    }
+
+    /**
+     * Register a cookie to be sent with the response.
+     *
+     * @param string $name     Cookie name.
+     * @param string $value    Cookie value.
+     * @param int    $expire   Expiration time as a Unix timestamp (0 for session cookie).
+     * @param string $path     Cookie path.
+     * @param string $domain   Cookie domain.
+     * @param bool   $secure   Whether the cookie should only be sent over secure connections.
+     * @param bool   $httponly Whether the cookie is accessible only through the HTTP protocol.
+     */
+    public function setCookie(
+        string $name,
+        string $value,
+        int $expire = 0,
+        string $path = '/',
+        string $domain = '',
+        bool $secure = false,
+        bool $httponly = false
+    ): void {
+        $cookie = urlencode($name) . '=' . urlencode($value);
+        if ($expire > 0) {
+            $cookie .= '; Expires=' . gmdate('D, d-M-Y H:i:s T', $expire);
+        }
+        if ($path) {
+            $cookie .= '; Path=' . $path;
+        }
+        if ($domain) {
+            $cookie .= '; Domain=' . $domain;
+        }
+        if ($secure) {
+            $cookie .= '; Secure';
+        }
+        if ($httponly) {
+            $cookie .= '; HttpOnly';
+        }
+        $this->responseCookies[] = $cookie;
     }
 
     /**
@@ -165,6 +230,10 @@ class WebServer {
 
         try {
             $request = new HttpRequest($requestContent);
+
+            // Parse and set cookies for dynamic scripts.
+            $_COOKIE = $request->getCookies();
+
             $getParams = $request->getQueryParams();
             $postBody = $request->getParsedBody();
 
@@ -269,19 +338,18 @@ class WebServer {
         // Set up superglobals for the dynamic script.
         $_GET = $getParams;
         $_POST = $postBody;
+        // $_COOKIE was already set in handleConnection()
 
-        // Expose shared variables to dynamic scripts if needed.
+        // Expose shared variables to dynamic scripts.
         $shared_variables = &$this->sharedVariables;
+        // Provide the server instance so scripts can set cookies.
+        $shared_variables['server'] = $this;
 
         // Default additional headers for dynamic responses.
         $additionalResponseHeaders = [
             "Content-Type" => "text/html",
             "Connection"   => "close"
         ];
-
-        // Example: Uncomment the following lines to perform an HTTP redirection.
-        // $responseCode = 303;
-        // $additionalResponseHeaders["Location"] = "/";
 
         // By default, we use HTTP 200 OK.
         $responseCode = 200;
@@ -296,6 +364,14 @@ class WebServer {
         foreach ($additionalResponseHeaders as $key => $value) {
             $responseHeaders .= "$key: $value\r\n";
         }
+
+        // Append any Set-Cookie headers if cookies were set.
+        foreach ($this->responseCookies as $cookie) {
+            $responseHeaders .= "Set-Cookie: $cookie\r\n";
+        }
+        // Clear cookies after adding them.
+        $this->responseCookies = [];
+
         // Send headers and content.
         fwrite($conn, $responseHeaders . "\r\n" . $content);
         fclose($conn);
