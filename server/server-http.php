@@ -1,13 +1,13 @@
 <?php
 
 $shared_variables = [
-    "counter"   => 1,
+    "counter" => 1,
     "container" => [],
 ];
 
 // Configuration
-$host         = '127.0.0.1';
-$port         = 8000;
+$host = '127.0.0.1';
+$port = 8000;
 $documentRoot = __DIR__ . DIRECTORY_SEPARATOR . 'public';
 
 // Ensure document root exists
@@ -143,7 +143,7 @@ function parseBody($headers, $body)
  */
 function respondStatic($conn, $path)
 {
-    $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
     $mimeType = finfo_file($finfo, $path);
     finfo_close($finfo);
 
@@ -152,7 +152,7 @@ function respondStatic($conn, $path)
     // Open the file and send its content
     $file = fopen($path, 'rb');
     if ($file) {
-        while (! feof($file)) {
+        while (!feof($file)) {
             $buffer = fread($file, 8192);
             fwrite($conn, $buffer);
         }
@@ -170,7 +170,7 @@ function respondStatic($conn, $path)
  */
 function respondDynamic($conn, $path, $method, $getParams, $postBody, $headers)
 {
-    $_GET  = $getParams;
+    $_GET = $getParams;
     $_POST = $postBody;
 
     global $shared_variables;
