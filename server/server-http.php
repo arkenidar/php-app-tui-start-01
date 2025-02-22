@@ -1,8 +1,13 @@
 <?php
 
+$shared_variables = [
+    "counter"   => 1,
+    "container" => [],
+];
+
 // Configuration
-$host = '127.0.0.1';
-$port = 8000;
+$host         = '127.0.0.1';
+$port         = 8000;
 $documentRoot = __DIR__ . DIRECTORY_SEPARATOR . 'public';
 
 // Ensure document root exists
@@ -164,8 +169,10 @@ function respondStatic($conn, $path)
  */
 function respondDynamic($conn, $path, $method, $getParams, $postBody, $headers)
 {
-    $_GET = $getParams;
+    $_GET  = $getParams;
     $_POST = $postBody;
+
+    global $shared_variables;
 
     ob_start();
     require $path;

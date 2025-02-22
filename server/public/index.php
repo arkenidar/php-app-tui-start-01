@@ -9,6 +9,23 @@
     <h1>Home page</h1>
     <p>Welcome to the home page</p>
     <hr>
+    <p>shared variables</p>
+    <form action="" method="post">
+        <input type="text" name="item">
+        <input type="submit" value="add to container">
+    </form>
+    <?php
+    if (isset($_POST['item'])) {
+        $shared_variables['container'][] = $_POST['item'];
+    }
+    ?>
+    <p>container: <?php print_r($shared_variables['container']); ?></p>
+    <hr>
+    counter:
+    <?php
+    echo $shared_variables['counter']++;
+    ?>
+    <hr>
     <?php
     $name = 'John'; // This is a PHP variable
     if (isset($_GET['name'])) {
