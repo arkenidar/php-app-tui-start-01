@@ -9,6 +9,7 @@ if (!$serverSocket) {
 stream_set_blocking($serverSocket, false);
 
 echo "Server listening on 0.0.0.0:8080...\n";
+echo "rlwrap nc localhost 8080";
 
 $clients = [];
 $fibers = [];
