@@ -35,6 +35,7 @@ while (true) {
                 $fiber = new Fiber(function ($socket) {
                     while (true) {
 
+                        // Send a prompt to the client
                         fwrite($socket, "enter a php formula: ");
 
                         // Read data from the client
@@ -44,16 +45,22 @@ while (true) {
                             break;
                         }
 
+                        // Process the received data
                         $data = strval($data);
                         $data = trim($data);
                         echo "Received: '$data'\n";
 
                         // Send a response back to the client
+
                         //$response = "Server response: $data\n";
                         //fwrite($socket, "enter a php formula: ");
+
+                        // Evaluate the formula
                         $formula = $data;
-                        $formula_php = "return (" . $formula . ");";
+                        $formula_php = "return ($formula);";
                         $response = eval ($formula_php) . "\n";
+
+                        // write the response to the client
                         fwrite($socket, $response);
                     }
 
