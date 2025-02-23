@@ -34,6 +34,9 @@ while (true) {
                 // Create a new Fiber for each client
                 $fiber = new Fiber(function ($socket) {
                     while (true) {
+
+                        fwrite($socket, "enter a php formula: ");
+
                         // Read data from the client
                         $data = Fiber::suspend();
                         if ($data === false || trim($data) === '') {
@@ -42,10 +45,15 @@ while (true) {
                         }
 
                         $data = strval($data);
-                        echo "Received: $data\n";
+                        $data = trim($data);
+                        echo "Received: '$data'\n";
 
                         // Send a response back to the client
-                        $response = "Server response: " . trim($data) . "\n";
+                        //$response = "Server response: $data\n";
+                        //fwrite($socket, "enter a php formula: ");
+                        $formula = $data;
+                        $formula_php = "return (" . $formula . ");";
+                        $response = eval ($formula_php) . "\n";
                         fwrite($socket, $response);
                     }
 
